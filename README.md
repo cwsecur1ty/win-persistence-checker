@@ -5,6 +5,8 @@ A PowerShell-based tool to detect common Windows persistence mechanisms. Useful 
 
 - Detects known persistence techniques including:
   - Registry `Run`, `RunOnce`, `Winlogon`, `Image File Execution Options`, etc.
+  - Outputs reg results to a clean, formatted .json file.
+  - Lightweight, portable, and requires no external dependencies
 
 Soon to add:
   - Scheduled Tasks and Startup folder entries
@@ -12,9 +14,6 @@ Soon to add:
   - Services and Drivers with suspicious paths
   - AppInit_DLLs and known autostart locations
   - COM hijacking keys
-
-- Outputs clean JSON or table format
-- Lightweight, portable, and requires no external dependencies
 
 ## Installation & Usage Instructions
 
@@ -36,7 +35,7 @@ Set-Location "$env:USERPROFILE\Downloads"
 
 ## Roadmap
 - Add support for remote scanning via PowerShell Remoting
-- Support output logging in JSON/CSV
+- <s>Support output logging in JSON/CSV</s>
 - Add IOC signature detection
 - VirusTotal/HybridAnalysis integration for hashes (optional)
 
