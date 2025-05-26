@@ -1,8 +1,6 @@
 # win-persistence-checker
 A PowerShell-based tool to detect common Windows persistence mechanisms. Useful for malware analysis, incident response, or system audits.
 
----
-
 ## Features
 
 - Detects known persistence techniques including:
@@ -18,7 +16,7 @@ Soon to add:
 - Outputs clean JSON or table format
 - Lightweight, portable, and requires no external dependencies
 
----
+## Installation Instructions
 
 ## 💻 Usage
 
@@ -26,4 +24,10 @@ Soon to add:
 .\persistcheck.ps1
 ```
 
-Will implement -output feature.
+## Roadmap
+Add support for remote scanning via PowerShell Remoting
+Support output logging in JSON/CSV
+Add IOC signature detection
+VirusTotal/HybridAnalysis integration for hashes (optional)
+
+License [LICENSE](LICENSE.md)
