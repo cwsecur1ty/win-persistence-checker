@@ -25,9 +25,9 @@ Soon to add:
 ```
 
 ## Roadmap
-Add support for remote scanning via PowerShell Remoting
-Support output logging in JSON/CSV
-Add IOC signature detection
-VirusTotal/HybridAnalysis integration for hashes (optional)
+- Add support for remote scanning via PowerShell Remoting
+- Support output logging in JSON/CSV
+- Add IOC signature detection
+- VirusTotal/HybridAnalysis integration for hashes (optional)
 
 License [LICENSE](LICENSE.md)
