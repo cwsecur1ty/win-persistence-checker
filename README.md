@@ -16,11 +16,21 @@ Soon to add:
 - Outputs clean JSON or table format
 - Lightweight, portable, and requires no external dependencies
 
-## Installation Instructions
+## Installation & Usage Instructions
 
-## 💻 Usage
+> ⚠️ These steps assume the machine may be compromised — do **not** directly browse GitHub on the infected system. Use PowerShell to fetch the script securely from a clean, trusted source.
 
+### 1. Open PowerShell as Administrator
+Right-click the Start menu → "Windows PowerShell (Admin)" or "Terminal (Admin)"
+
+### 2. Download the Script Remotely via PowerShell
 ```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/cwsecur1ty/win-persistence-checker/main/persistcheck.ps1" -OutFile "$env:USERPROFILE\Downloads\persistcheck.ps1"
+```
+
+### 3. Run the script
+```powershell
+Set-Location "$env:USERPROFILE\Downloads"
 .\persistcheck.ps1
 ```
 
