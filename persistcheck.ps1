@@ -149,9 +149,9 @@ function Resolve-FilePath {
     }
     # If quoted, remove quotes
     $FileName = $FileName.Trim('"', "'")
-    # Try to resolve via PATH
-    $env:PATH.Split(';') | ForEach-Object {
-        $candidate = Join-Path $_ $FileName
+    # Try to resolve via PATH and return the first match
+    foreach ($dir in $env:PATH.Split(';')) {
+        $candidate = Join-Path $dir $FileName
         if (Test-Path $candidate) { return $candidate }
     }
     return $FileName # fallback to original
