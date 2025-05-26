@@ -38,6 +38,9 @@
 # Export to JSON:
 #   .\persistcheck.ps1 -ExportJson
 #
+# Export to HTML:
+#   .\persistcheck.ps1 -ExportHtml
+#
 # Custom output path:
 #   .\persistcheck.ps1 -ExportJson -OutputPath "C:\Reports\findings.json"
 #
@@ -62,7 +65,9 @@
 param(
     [switch]$ExportJson,
     [string]$OutputPath = "persistence_findings_$(Get-Date -Format 'yyyyMMdd_HHmmss').json",
-    [switch]$VerboseOutput
+    [switch]$VerboseOutput,
+    [switch]$ExportHtml,
+    [string]$HtmlOutputPath = "persistence_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
 )
 
 # Function to calculate SHA256 hash of a file
@@ -270,7 +275,7 @@ function Get-RegistryPersistence {
                             $value = $key.Value
                             $filePathRaw = Get-FilePathFromCommand -Command $value
                             $filePath = Resolve-FilePath -FileName $filePathRaw
-                            $fileExists = Test-Path $filePath
+                            $fileExists = ($filePath -and (Test-Path $filePath) -and -not (Test-Path $filePath -PathType Container))
                             $fileHash = if ($fileExists) { Get-FileHash -FilePath $filePath } else { $null }
                             $sigInfo = if ($fileExists) { Get-DigitalSignatureInfo -FilePath $filePath } else { @{ IsSigned = $null; Signer = $null } }
                             $heuristics = if ($fileExists) { Get-HeuristicFlags -FilePath $filePath } else { $null }
@@ -304,6 +309,54 @@ function Get-RegistryPersistence {
     return $findings
 }
 
+# Function to generate HTML report
+function Export-HTMLReport {
+    param(
+        [array]$Findings,
+        [string]$Path
+    )
+    $date = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $total = $Findings.Count
+    $high = ($Findings | Where-Object { $_.Severity -eq 'High' }).Count
+    $medium = ($Findings | Where-Object { $_.Severity -eq 'Medium' }).Count
+    $low = ($Findings | Where-Object { $_.Severity -eq 'Low' }).Count
+    $style = @"
+    <style>
+    body { font-family: Arial, sans-serif; background: #181818; color: #eee; }
+    h1 { color: #00ffff; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #444; padding: 8px; text-align: left; }
+    th { background: #222; }
+    tr.high { background: #ffcccc; color: #900; }
+    tr.medium { background: #fff3cd; color: #856404; }
+    tr.low { background: #d4edda; color: #155724; }
+    </style>
+"@
+    $html = @"
+    <html>
+    <head>
+    <title>Windows Persistence Checker Report</title>
+    $style
+    </head>
+    <body>
+    <h1>Windows Persistence Checker Report</h1>
+    <p><b>Generated:</b> $date</p>
+    <p><b>Total Findings:</b> $total | <span style='color:#900'>High:</span> $high | <span style='color:#856404'>Medium:</span> $medium | <span style='color:#155724'>Low:</span> $low</p>
+    <table>
+    <tr>
+        <th>Severity</th><th>Location</th><th>Key</th><th>Value</th><th>FilePath</th><th>FileHash</th><th>IsSigned</th><th>Signer</th><th>HeuristicFlags</th><th>LastWriteTime</th><th>CheckTime</th>
+    </tr>
+"@
+    foreach ($f in $Findings) {
+        $sevClass = ($f.Severity).ToLower()
+        $html += "<tr class='$sevClass'>"
+        $html += "<td>$($f.Severity)</td><td>$($f.Location)</td><td>$($f.Key)</td><td>$($f.Value)</td><td>$($f.FilePath)</td><td>$($f.FileHash)</td><td>$($f.IsSigned)</td><td>$($f.Signer)</td><td>$($f.HeuristicFlags)</td><td>$($f.LastWriteTime)</td><td>$($f.CheckTime)</td>"
+        $html += "</tr>"
+    }
+    $html += "</table></body></html>"
+    $html | Out-File -Encoding UTF8 $Path
+}
+
 # Main execution
 try {
     Write-Host "Windows Persistence Checker" -ForegroundColor Cyan
@@ -332,6 +385,10 @@ try {
         if ($ExportJson) {
             $results | ConvertTo-Json | Out-File $OutputPath
             Write-Host "`nResults exported to $OutputPath" -ForegroundColor Green
+        }
+        if ($ExportHtml) {
+            Export-HTMLReport -Findings $results -Path $HtmlOutputPath
+            Write-Host "`nHTML report exported to $HtmlOutputPath" -ForegroundColor Green
         }
     }
     else {
