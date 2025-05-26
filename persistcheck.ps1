@@ -141,6 +141,74 @@ function Get-SeverityLevel {
     return "Low"
 }
 
+# Function to resolve file path (handles just the executable name by searching PATH)
+function Resolve-FilePath {
+    param([string]$FileName)
+    if ([System.IO.Path]::IsPathRooted($FileName) -and (Test-Path $FileName)) {
+        return $FileName
+    }
+    # If quoted, remove quotes
+    $FileName = $FileName.Trim('"', "'")
+    # Try to resolve via PATH
+    $env:PATH.Split(';') | ForEach-Object {
+        $candidate = Join-Path $_ $FileName
+        if (Test-Path $candidate) { return $candidate }
+    }
+    return $FileName # fallback to original
+}
+
+# Function to check digital signature
+function Get-DigitalSignatureInfo {
+    param([string]$FilePath)
+    $result = @{ IsSigned = $false; Signer = $null }
+    try {
+        if (Test-Path $FilePath) {
+            $sig = Get-AuthenticodeSignature -FilePath $FilePath
+            if ($sig.Status -eq 'Valid') {
+                $result.IsSigned = $true
+                $result.Signer = $sig.SignerCertificate.Subject
+            }
+            elseif ($sig.Status -ne 'NotSigned') {
+                $result.IsSigned = $false
+                $result.Signer = $sig.Status
+            }
+        }
+    }
+    catch { }
+    return $result
+}
+
+# Function for heuristic checks
+function Get-HeuristicFlags {
+    param([string]$FilePath)
+    $flags = @()
+    if ($FilePath) {
+        # Suspicious if not in Windows or Program Files
+        if ($FilePath -notmatch '^(C:\\Windows|C:\\Program Files)') {
+            $flags += 'UnusualLocation'
+        }
+        # Suspicious if writable by non-admins
+        try {
+            $acl = Get-Acl $FilePath -ErrorAction Stop
+            foreach ($ace in $acl.Access) {
+                if ($ace.FileSystemRights -match 'Write' -and $ace.IdentityReference -notmatch 'BUILTIN\\Administrators') {
+                    $flags += 'WritableByNonAdmin'
+                    break
+                }
+            }
+        }
+        catch {}
+        # Suspicious if double extension or typosquatting
+        if ($FilePath -match '\\[^\\]+\.(exe|bat|cmd|vbs)\.(exe|bat|cmd|vbs)$') {
+            $flags += 'DoubleExtension'
+        }
+        if ($FilePath -match 'svchost|explorer|lsass|csrss|winlogon' -and $FilePath -notmatch 'C:\\Windows') {
+            $flags += 'TyposquatName'
+        }
+    }
+    return $flags -join ','
+}
+
 # Function to check registry keys and return findings
 function Get-RegistryPersistence {
     [CmdletBinding()]
@@ -200,22 +268,28 @@ function Get-RegistryPersistence {
                     foreach ($key in $keys.PSObject.Properties) {
                         if ($key.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSProvider', 'PSDrive')) {
                             $value = $key.Value
-                            $filePath = Get-FilePathFromCommand -Command $value
-                            $fileExists = Test-FilePath -Path $filePath
+                            $filePathRaw = Get-FilePathFromCommand -Command $value
+                            $filePath = Resolve-FilePath -FileName $filePathRaw
+                            $fileExists = Test-Path $filePath
                             $fileHash = if ($fileExists) { Get-FileHash -FilePath $filePath } else { $null }
+                            $sigInfo = if ($fileExists) { Get-DigitalSignatureInfo -FilePath $filePath } else { @{ IsSigned = $null; Signer = $null } }
+                            $heuristics = if ($fileExists) { Get-HeuristicFlags -FilePath $filePath } else { $null }
                             $severity = Get-SeverityLevel -Location $regPath.Description -Value $value
                             
                             $findings += [PSCustomObject]@{
-                                Location      = $regPath.Description
-                                RegistryPath  = $regPath.Path
-                                Key           = $key.Name
-                                Value         = $value
-                                Severity      = $severity
-                                FileExists    = $fileExists
-                                FilePath      = $filePath
-                                FileHash      = $fileHash
-                                LastWriteTime = (Get-ItemProperty -Path $regPath.Path).PSLastWriteTime
-                                CheckTime     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                Location       = $regPath.Description
+                                RegistryPath   = $regPath.Path
+                                Key            = $key.Name
+                                Value          = $value
+                                Severity       = $severity
+                                FileExists     = $fileExists
+                                FilePath       = $filePath
+                                FileHash       = $fileHash
+                                IsSigned       = $sigInfo.IsSigned
+                                Signer         = $sigInfo.Signer
+                                HeuristicFlags = $heuristics
+                                LastWriteTime  = (Get-ItemProperty -Path $regPath.Path).PSLastWriteTime
+                                CheckTime      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                             }
                         }
                     }
