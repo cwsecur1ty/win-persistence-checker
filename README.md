@@ -36,7 +36,16 @@ Set-Location "$env:USERPROFILE\Downloads"
 ## Roadmap
 - Add support for remote scanning via PowerShell Remoting
 - <s>Support output logging in JSON/CSV</s>
+- <s>SHA256 File hash calculation for registry referenced files</s>
 - Add IOC signature detection
 - VirusTotal/HybridAnalysis integration for hashes (optional)
+- HTML report generation
+- Summary statistics
+- Add machine information to report OS/Users, etc
+- Add file hash md5/sha1/sha256 for referenced files
+- Add file metadata collection
+- Add scheduled task creation for repeated runs to a dashboard
+- Error logging to files
+  
 
 License [LICENSE](LICENSE.md)
