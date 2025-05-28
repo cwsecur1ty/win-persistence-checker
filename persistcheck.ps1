@@ -1,63 +1,25 @@
 # Windows Persistence Checker
-# =======================
+# ==========================
+# What this script does:
+#   - Scans a wide range of registry locations for autorun entries (Run, RunOnce, Winlogon, IFEO, etc.)
+#   - Optionally scans all scheduled tasks for suspicious or malicious configurations
+#   - Checks referenced files for existence, digital signature, and calculates SHA256 hashes
+#   - Assigns a severity level (High, Medium, Low) to each finding based on risk indicators
+#   - Outputs results to the console, and can export to JSON or HTML for reporting/sharing
 #
-# This PowerShell script is designed to help detect potential persistence mechanisms on Windows systems.
-# It scans various registry locations commonly used for persistence and provides a detailed report of findings.
+# How to use:
+#   1. Open PowerShell as Administrator (required for full access)
+#   2. Place this script and the 'modules' folder in the same directory
+#   3. Run the script with your desired options, for example:
+#        .\persistcheck.ps1 -IncludeScheduledTasks -ExportHtml
+#   4. Review the output in your console and/or the generated report files
 #
-# What it checks:
-# --------------
-# 1. Common Run locations:
-#    - Local Machine Run (HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run)
-#    - Current User Run (HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run)
-#    - RunOnce entries for both Local Machine and Current User
+# Output:
+#   - Console: Color-coded summary and details of all findings
+#   - JSON: Machine-readable export for further analysis
+#   - HTML: Easy-to-read report for sharing or archiving
 #
-# 2. System-level persistence:
-#    - Winlogon entries
-#    - Image File Execution Options (IFEO)
-#    - Shell Execute Hooks
-#    - Active Setup components
-#
-# 3. Policy-based persistence:
-#    - Local Machine Policies Run
-#    - Current User Policies Run
-#
-# Features:
-# ---------
-# - Severity-based classification (High, Medium, Low)
-# - File existence validation for referenced executables
-# - SHA256 hash calculation for referenced files
-# - Color-coded output for quick visual assessment
-# - JSON export capability for further analysis
-# - Timestamp tracking for each finding
-#
-# Usage:
-# ------
-# Basic usage:
-#   .\persistcheck.ps1
-#
-# Export to JSON:
-#   .\persistcheck.ps1 -ExportJson
-#
-# Export to HTML:
-#   .\persistcheck.ps1 -ExportHtml
-#
-# Custom output path:
-#   .\persistcheck.ps1 -ExportJson -OutputPath "C:\Reports\findings.json"
-#
-# Verbose output:
-#   .\persistcheck.ps1 -VerboseOutput
-#
-# Output Format:
-# -------------
-# - Location: Friendly name of the registry location
-# - RegistryPath: Full registry path
-# - Key: Registry key name
-# - Value: The actual value/command
-# - Severity: Risk level (High/Medium/Low)
-# - FileExists: Whether the referenced file exists
-# - FileHash: SHA256 hash of the referenced file (if exists)
-# - LastWriteTime: When the registry key was last modified
-# - CheckTime: When the check was performed
+# The script is read-only and does not change any system settings.
 #
 # Author: https://github.com/cwsecur1ty
 
@@ -67,15 +29,26 @@ param(
     [string]$OutputPath = "persistence_findings_$(Get-Date -Format 'yyyyMMdd_HHmmss').json",
     [switch]$VerboseOutput,
     [switch]$ExportHtml,
-    [string]$HtmlOutputPath = "persistence_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
+    [string]$HtmlOutputPath = "persistence_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').html",
+    [switch]$IncludeScheduledTasks,
+    [switch]$DetailedTaskAnalysis
 )
+
+# Import the scheduled task scanning module
+$modulePath = Join-Path $PSScriptRoot "modules\scheduled_task_scan.ps1"
+if (Test-Path $modulePath) {
+    . $modulePath
+}
+else {
+    Write-Warning "Scheduled task scanning module not found at: $modulePath"
+}
 
 # Function to calculate SHA256 hash of a file
 function Get-FileHash {
     param([string]$FilePath)
     
     try {
-        if (Test-Path $FilePath) {
+        if ($FilePath -and (Test-Path $FilePath)) {
             $hash = Get-FileHash -Path $FilePath -Algorithm SHA256
             return $hash.Hash
         }
@@ -266,6 +239,7 @@ function Get-RegistryPersistence {
     )
 
     foreach ($regPath in $registryPaths) {
+        Write-Host "[+] Scanning registry: $($regPath.Description) ($($regPath.Path))" -ForegroundColor Cyan
         try {
             if (Test-Path $regPath.Path) {
                 $keys = Get-ItemProperty -Path $regPath.Path -ErrorAction Stop
@@ -309,93 +283,92 @@ function Get-RegistryPersistence {
     return $findings
 }
 
-# Function to generate HTML report
-function Export-HTMLReport {
-    param(
-        [array]$Findings,
-        [string]$Path
-    )
-    $date = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $total = $Findings.Count
-    $high = ($Findings | Where-Object { $_.Severity -eq 'High' }).Count
-    $medium = ($Findings | Where-Object { $_.Severity -eq 'Medium' }).Count
-    $low = ($Findings | Where-Object { $_.Severity -eq 'Low' }).Count
-    $style = @"
-    <style>
-    body { font-family: Arial, sans-serif; background: #181818; color: #eee; }
-    h1 { color: #00ffff; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #444; padding: 8px; text-align: left; }
-    th { background: #222; }
-    tr.high { background: #ffcccc; color: #900; }
-    tr.medium { background: #fff3cd; color: #856404; }
-    tr.low { background: #d4edda; color: #155724; }
-    </style>
-"@
+# Main execution block
+$allFindings = @()
+
+Write-Host "[+] Starting Windows persistence scan..." -ForegroundColor Green
+
+# Get registry persistence findings
+$registryFindings = Get-RegistryPersistence
+$allFindings += $registryFindings
+
+# Get scheduled task findings if requested
+if ($IncludeScheduledTasks) {
+    Write-Host "[+] Scanning scheduled tasks..." -ForegroundColor Cyan
+    $taskFindings = Get-ScheduledTaskPersistence -Detailed:$DetailedTaskAnalysis -CheckTriggers -CheckActions
+    $allFindings += $taskFindings
+}
+
+# Export findings based on parameters
+if ($ExportJson) {
+    $allFindings | ConvertTo-Json -Depth 10 | Out-File $OutputPath
+    Write-Host "Findings exported to: $OutputPath"
+}
+
+if ($ExportHtml) {
     $html = @"
     <html>
     <head>
-    <title>Windows Persistence Checker Report</title>
-    $style
+        <style>
+            body { font-family: Arial, sans-serif; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .high { background-color: #ffcccc; }
+            .medium { background-color: #fff2cc; }
+            .low { background-color: #ccffcc; }
+        </style>
     </head>
     <body>
-    <h1>Windows Persistence Checker Report</h1>
-    <p><b>Generated:</b> $date</p>
-    <p><b>Total Findings:</b> $total | <span style='color:#900'>High:</span> $high | <span style='color:#856404'>Medium:</span> $medium | <span style='color:#155724'>Low:</span> $low</p>
-    <table>
-    <tr>
-        <th>Severity</th><th>Location</th><th>Key</th><th>Value</th><th>FilePath</th><th>FileHash</th><th>IsSigned</th><th>Signer</th><th>HeuristicFlags</th><th>LastWriteTime</th><th>CheckTime</th>
-    </tr>
+        <h1>Windows Persistence Analysis Report</h1>
+        <table>
+            <tr>
+                <th>Type</th>
+                <th>Name/Path</th>
+                <th>Severity</th>
+                <th>Details</th>
+                <th>Suspicious Flags</th>
+            </tr>
 "@
-    foreach ($f in $Findings) {
-        $sevClass = ($f.Severity).ToLower()
-        $html += "<tr class='$sevClass'>"
-        $html += "<td>$($f.Severity)</td><td>$($f.Location)</td><td>$($f.Key)</td><td>$($f.Value)</td><td>$($f.FilePath)</td><td>$($f.FileHash)</td><td>$($f.IsSigned)</td><td>$($f.Signer)</td><td>$($f.HeuristicFlags)</td><td>$($f.LastWriteTime)</td><td>$($f.CheckTime)</td>"
-        $html += "</tr>"
-    }
-    $html += "</table></body></html>"
-    $html | Out-File -Encoding UTF8 $Path
-}
 
-# Main execution
-try {
-    Write-Host "Windows Persistence Checker" -ForegroundColor Cyan
-    Write-Host "Checking registry locations for persistence mechanisms..." -ForegroundColor Yellow
-    Write-Host ""
-
-    $results = Get-RegistryPersistence
-
-    if ($results.Count -gt 0) {
-        Write-Host "Found $($results.Count) potential persistence mechanisms:" -ForegroundColor Green
+    foreach ($finding in $allFindings) {
+        $severityClass = $finding.Severity.ToLower()
+        $type = if ($finding.TaskName) { "Scheduled Task" } else { "Registry" }
+        $name = if ($finding.TaskName) { $finding.TaskName } else { $finding.Key }
+        $details = if ($finding.TaskName) { 
+            "Last Run: $($finding.LastRunTime)`nNext Run: $($finding.NextRunTime)"
+        } else {
+            "Value: $($finding.Value)"
+        }
         
-        # Group by severity
-        $groupedResults = $results | Group-Object Severity
-        foreach ($group in $groupedResults) {
-            $color = switch ($group.Name) {
-                "High" { "Red" }
-                "Medium" { "Yellow" }
-                "Low" { "Green" }
-                default { "White" }
-            }
-            
-            Write-Host "`n$($group.Name) Severity Findings ($($group.Count)):" -ForegroundColor $color
-            $group.Group | Format-Table -AutoSize
-        }
+        $html += @"
+            <tr class="$severityClass">
+                <td>$type</td>
+                <td>$name</td>
+                <td>$($finding.Severity)</td>
+                <td>$details</td>
+                <td>$($finding.SuspiciousFlags -join ', ')</td>
+            </tr>
+"@
+    }
 
-        if ($ExportJson) {
-            $results | ConvertTo-Json | Out-File $OutputPath
-            Write-Host "`nResults exported to $OutputPath" -ForegroundColor Green
-        }
-        if ($ExportHtml) {
-            Export-HTMLReport -Findings $results -Path $HtmlOutputPath
-            Write-Host "`nHTML report exported to $HtmlOutputPath" -ForegroundColor Green
-        }
-    }
-    else {
-        Write-Host "No persistence mechanisms found in checked locations." -ForegroundColor Green
-    }
+    $html += @"
+        </table>
+    </body>
+    </html>
+"@
+    $html | Out-File $HtmlOutputPath
+    Write-Host "HTML report generated at: $HtmlOutputPath"
 }
-catch {
-    Write-Error "An error occurred during execution: $_"
-    exit 1
-} 
+
+# Display summary
+$highSeverity = ($allFindings | Where-Object { $_.Severity -eq "High" }).Count
+$mediumSeverity = ($allFindings | Where-Object { $_.Severity -eq "Medium" }).Count
+$lowSeverity = ($allFindings | Where-Object { $_.Severity -eq "Low" }).Count
+
+Write-Host "`nScan Summary:"
+Write-Host "------------"
+Write-Host "High Severity Findings: $highSeverity"
+Write-Host "Medium Severity Findings: $mediumSeverity"
+Write-Host "Low Severity Findings: $lowSeverity"
+Write-Host "Total Findings: $($allFindings.Count)" 
